@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -107,6 +107,20 @@ class CachedRequestData:
 
 
 @dataclass
+class RequestExecStats:
+    """Execution stats for a single request in a scheduler step."""
+
+    # Number of prefix cache hit blocks on GPU.
+    n_gpu: int = 0
+    # Number of prefix cache hit blocks on CPU.
+    n_cpu: int = 0
+    # Number of prefix cache hit blocks on SSD.
+    n_ssd: int = 0
+    # Number of tokens that need to be (re)computed.
+    n_comp: int = 0
+
+
+@dataclass
 class SchedulerOutput:
 
     # list of the requests that are scheduled for the first time.
@@ -149,6 +163,10 @@ class SchedulerOutput:
     structured_output_request_ids: dict[str, int]
     # the bitmask for the whole batch
     grammar_bitmask: Optional[npt.NDArray[np.int32]]
+
+    # Per-request execution stats for the current scheduler step.
+    request_exec_stats: dict[str, RequestExecStats] = field(
+        default_factory=dict)
 
     # KV Cache Connector metadata.
     kv_connector_metadata: Optional[KVConnectorMetadata] = None

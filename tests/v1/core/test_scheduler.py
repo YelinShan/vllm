@@ -1247,3 +1247,24 @@ def test_memory_leak():
 
     # Confirm no memory leak.
     assert_scheduler_empty(scheduler)
+
+
+def test_request_exec_stats_prefix_cache():
+    scheduler = create_scheduler(enable_prefix_caching=True,
+                                 block_size=4,
+                                 max_num_batched_tokens=64,
+                                 max_num_seqs=4)
+
+    req1 = create_requests(num_requests=1, num_tokens=8)[0]
+    scheduler.add_request(req1)
+    out1 = scheduler.schedule()
+    stats1 = out1.request_exec_stats[req1.request_id]
+    assert stats1.n_gpu == 0
+    assert stats1.n_comp == 8
+
+    req2 = create_requests(num_requests=1, num_tokens=8)[0]
+    scheduler.add_request(req2)
+    out2 = scheduler.schedule()
+    stats2 = out2.request_exec_stats[req2.request_id]
+    assert stats2.n_gpu == 1
+    assert stats2.n_comp == 4

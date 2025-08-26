@@ -21,7 +21,7 @@ from vllm.v1.core.encoder_cache_manager import (EncoderCacheManager,
 from vllm.v1.core.kv_cache_manager import KVCacheManager
 from vllm.v1.core.sched.interface import SchedulerInterface
 from vllm.v1.core.sched.output import (CachedRequestData, NewRequestData,
-                                       SchedulerOutput)
+                                       RequestExecStats, SchedulerOutput)
 from vllm.v1.core.sched.utils import check_stop
 from vllm.v1.engine import (EngineCoreEventType, EngineCoreOutput,
                             EngineCoreOutputs)
@@ -192,6 +192,9 @@ class Scheduler(SchedulerInterface):
         # For logging.
         scheduled_timestamp = time.monotonic()
 
+        # Per-request execution statistics collected in this step.
+        request_exec_stats: dict[str, RequestExecStats] = {}
+
         # First, schedule the RUNNING requests.
         req_index = 0
         while req_index < len(self.running) and token_budget > 0:
@@ -282,6 +285,13 @@ class Scheduler(SchedulerInterface):
             num_scheduled_tokens[request.request_id] = num_new_tokens
             token_budget -= num_new_tokens
             req_index += 1
+
+            request_exec_stats[request.request_id] = RequestExecStats(
+                n_gpu=0,
+                n_cpu=0,
+                n_ssd=0,
+                n_comp=num_new_tokens,
+            )
 
             # Speculative decode related.
             if request.spec_token_ids:
@@ -483,6 +493,15 @@ class Scheduler(SchedulerInterface):
                         self.encoder_cache_manager.allocate(request, i)
                     encoder_budget = new_encoder_budget
 
+                request_exec_stats[request.request_id] = RequestExecStats(
+                    n_gpu=(num_new_local_computed_tokens //
+                           self.kv_cache_manager.block_size),
+                    n_cpu=(num_external_computed_tokens //
+                           self.kv_cache_manager.block_size),
+                    n_ssd=0,
+                    n_comp=num_new_tokens,
+                )
+
         # Put back any skipped requests at the head of the waiting queue
         if skipped_waiting_requests:
             self.waiting.extendleft(skipped_waiting_requests)
@@ -553,6 +572,7 @@ class Scheduler(SchedulerInterface):
             free_encoder_input_ids=self.encoder_cache_manager.get_freed_ids(),
             structured_output_request_ids=structured_output_request_ids,
             grammar_bitmask=grammar_bitmask,
+            request_exec_stats=request_exec_stats,
         )
 
         # NOTE(Kuntai): this function is designed for multiple purposes:
